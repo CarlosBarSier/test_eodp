@@ -120,6 +120,9 @@ class detectionPhase(initIsm):
         :return: toa in electrons
         """
         #TODO
+
+
+
         return toae
 
     def badDeadPixels(self, toa,bad_pix,dead_pix,bad_pix_red,dead_pix_red):
@@ -133,6 +136,8 @@ class detectionPhase(initIsm):
         :return: toa in e- including bad & dead pixels
         """
         #TODO
+
+        toa[:, 5] = toa[:, 5]*(1-bad_pix_red)
         return toa
 
     def prnu(self, toa, kprnu):
@@ -143,6 +148,8 @@ class detectionPhase(initIsm):
         :return: TOA after adding PRNU [e-]
         """
         #TODO
+        self.ismConfig.kprnu = kprnu
+        prnu_eff = np.random.normal(0, 1, toa.shape[1])  # Standard normal distribution
         return toa
 
 
@@ -158,4 +165,7 @@ class detectionPhase(initIsm):
         :return: TOA in [e-] with dark signal
         """
         #TODO
+
+        prnu_eff = np.random.normal(0, 1, toa.shape[1])  # Standard normal distribution
+
         return toa

@@ -93,9 +93,7 @@ class opticalPhase(initIsm):
         :return: TOA image in irradiances [mW/m2]
         """
 
-        # Creo que es así pero ni idea
-
-        toa = Tr*toa*pi/4*(D/f)**2
+        toa = Tr*toa*np.pi/4*(D/f)**2
         return toa
 
 
