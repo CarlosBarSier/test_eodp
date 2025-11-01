@@ -104,8 +104,8 @@ class detectionPhase(initIsm):
         :param wv: Central wavelength of the band [m]
         :return: Toa in photons
         """
-        #TODO
-        #Comprobar unidades
+
+        #Comprobar unidades!!! (toa/1000????)
         e_in = toa*area_pix*tint
         e_pho = self.constants.h_planck*self.constants.speed_light/wv
         toa_ph = e_in/e_pho
@@ -119,10 +119,10 @@ class detectionPhase(initIsm):
         :param QE: Quantum efficiency [e-/ph]
         :return: toa in electrons
         """
-        #TODO
-
-
-
+        toae = toa * QE
+        FWC = getattr(self.ismConfig, "FWC", None)
+        if FWC is not None:
+            toae = np.minimum(toae, FWC)
         return toae
 
     def badDeadPixels(self, toa,bad_pix,dead_pix,bad_pix_red,dead_pix_red):
@@ -135,9 +135,26 @@ class detectionPhase(initIsm):
         :param dead_pix_red: Reduction in the quantum efficiency for the dead pixels [-, over 1]
         :return: toa in e- including bad & dead pixels
         """
-        #TODO
+        n_alt, n_act = toa.shape
 
-        toa[:, 5] = toa[:, 5]*(1-bad_pix_red)
+        # número total de columnas afectadas (según porcentaje)
+        tot_bad = int(max(0, round(bad_pix / 100.0 * n_act)))
+        tot_dead = int(max(0, round(dead_pix / 100.0 * n_act)))
+
+        # columnas "dead" distribuidas cada cierto número de columnas
+        if tot_dead > 0:
+            step_d = max(1, n_act // tot_dead)
+            idx_dead = np.arange(0, n_act, step_d)[:tot_dead]
+            toa[:, idx_dead] *= (1.0 - dead_pix_red)
+
+        # columnas "bad" desplazadas ligeramente para no coincidir con las dead
+        if tot_bad > 0:
+            step_b = max(1, n_act // tot_bad)
+            start_b = 1 if tot_dead > 0 else 0
+            idx_bad = np.arange(start_b, n_act, step_b)[:tot_bad]
+            toa[:, idx_bad] *= (1.0 - bad_pix_red)
+
+        #toa[:, 5] = toa[:, 5]*(1-bad_pix_red) MATIZ??
         return toa
 
     def prnu(self, toa, kprnu):
@@ -147,9 +164,11 @@ class detectionPhase(initIsm):
         :param kprnu: multiplicative factor to the standard normal deviation for the PRNU
         :return: TOA after adding PRNU [e-]
         """
-        #TODO
         self.ismConfig.kprnu = kprnu
         prnu_eff = np.random.normal(0, 1, toa.shape[1])  # Standard normal distribution
+        #APLICAMOS A LA MATRIZ (REVISAR????)
+        for j in range(toa.shape[1]):
+            toa[:,j] = toa[:,j]*(1.0 + prnu_eff[j]*kprnu)
         return toa
 
 
@@ -164,8 +183,9 @@ class detectionPhase(initIsm):
         :param ds_B_coeff: Empirical parameter of the model 6040 K
         :return: TOA in [e-] with dark signal
         """
-        #TODO
-
-        prnu_eff = np.random.normal(0, 1, toa.shape[1])  # Standard normal distribution
+        Sd = ds_A_coeff * (T / Tref) ** 3 * np.exp(-ds_B_coeff * (1.0 / T - 1.0 / Tref))
+        ds_act = Sd * (1.0 + np.abs(np.random.normal(0.0, 1.0, toa.shape[1]) * kdsnu))
+        for j in range(toa.shape[1]):
+            toa[:, j] = toa[:, j] + ds_act[j]
 
         return toa
