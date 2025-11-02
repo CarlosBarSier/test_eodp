@@ -119,7 +119,7 @@ class opticalPhase(initIsm):
         :return: TOA image 2D in radiances [mW/m2]
         """
         # wv in [um]
-        isrf, wv_isrf = readIsrf(self.auxdir + '/' + self.ismConfig.isrffile, band)
+        isrf, wv_isrf = readIsrf(self.auxdir + self.ismConfig.isrffile, band)
         wv_isrf = wv_isrf * 1000
         isrf_normalised = isrf/np.sum(isrf)
 

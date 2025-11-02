@@ -4,7 +4,7 @@
 from ism.src.ism import ism
 
 # Directory - this is the common directory for the execution of the E2E, all modules
-auxdir = r'C:\\Users\Kolarov\Desktop\EarthObservation\Codes\S3\test_eodp\auxiliary'
+auxdir = r'C:\Users\Kolarov\Desktop\EarthObservation\Codes\S3\test_eodp\auxiliary'
 indir = r"C:\\Users\Kolarov\Desktop\EarthObservation\Codes\S3\EODP-TS-ISM\input\gradient_alt100_act150" # small scene
 outdir = r"C:\\Users\Kolarov\Desktop\EarthObservation\Codes\S3\EODP-TS-ISM\myoutput"
 
