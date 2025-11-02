@@ -112,17 +112,12 @@ class opticalPhase(initIsm):
         :param Hsys: System MTF
         :return: TOA image in irradiances [mW/m2]
         """
-        """
-        Apply the system MTF to the TOA image (same dimensions).
-        The MTF provided by mtf.system_mtf() is already centred.
-        """
-        i0, j0 = toa.shape[0] // 2, toa.shape[1] // 2
-        dc = Hsys[i0, j0]
-        if dc != 0:
-            Hsys = Hsys / dc
-        # Aplica SIN shifts (Hsys ya está centrado como lo generas)
-        GE = fft2(toa)
-        toa_ft = np.real(ifft2(GE * Hsys))
+        # Image to frequency domain
+        toa_fr = fft2(toa)
+        # Apply MTF (multiplication in frequency domain)
+        mtf_centered = fftshift(Hsys)
+        toa_fr_fil = toa_fr * mtf_centered
+        toa_ft = np.real(ifft2(toa_fr_fil))
         return toa_ft
 
     def spectralIntegration(self, sgm_toa, sgm_wv, band):

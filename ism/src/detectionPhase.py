@@ -106,7 +106,7 @@ class detectionPhase(initIsm):
         """
 
         #Comprobar unidades!!! (toa/1000????)
-        e_in = toa*area_pix*tint
+        e_in = toa*area_pix*tint*1e-3
         e_pho = self.constants.h_planck*self.constants.speed_light/wv
         toa_ph = e_in/e_pho
 
@@ -119,10 +119,11 @@ class detectionPhase(initIsm):
         :param QE: Quantum efficiency [e-/ph]
         :return: toa in electrons
         """
-        toae = toa * QE
         FWC = getattr(self.ismConfig, "FWC", None)
         if FWC is not None:
-            toae = np.minimum(toae, FWC)
+            toa = np.minimum(toa, FWC)  # FWC en fotones
+
+        toae = toa * QE
         return toae
 
     def badDeadPixels(self, toa,bad_pix,dead_pix,bad_pix_red,dead_pix_red):

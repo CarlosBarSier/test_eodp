@@ -111,6 +111,9 @@ class mtf:
         fn2D = np.sqrt(fnAltxx * fnAltxx + fnActxx * fnActxx)
         fr2D = np.sqrt(frAltxx * frAltxx + frActxx * frActxx)
 
+        writeMat(self.outdir, "fn2D", fn2D)
+        writeMat(self.outdir, "fr2D", fr2D)
+
         return fn2D, fr2D, fnAct, fnAlt
 
     def mtfDiffract(self,fr2D):
@@ -177,7 +180,10 @@ class mtf:
         :param fnD: 2D normalised frequencies (f/(1/w))), where w is the pixel width
         :return: detector MTF
         """
-        Hdet = np.abs(np.sin(np.pi*fn2D)/(np.pi*fn2D + 1e-12))
+        x = np.pi * fn2D
+        Hdet = np.ones_like(fn2D)
+        non_zero = ~np.isclose(x, 0.0)
+        Hdet[non_zero] = np.abs(np.sin(x[non_zero]) / x[non_zero])
         return Hdet
 
     def mtfSmearing(self, fnAlt, ncolumns, ksmear):
@@ -188,10 +194,8 @@ class mtf:
         :param ksmear: Amplitude of low-frequency component for the motion smear MTF in ALT [pixels]
         :return: Smearing MTF
         """
-        Hsmear = np.zeros((fnAlt.shape[0], ncolumns))
-        row = np.sin(fnAlt * ksmear * np.pi) / (fnAlt * ksmear * np.pi + 1e-12)
-        for j in range(ncolumns):
-            Hsmear[:, j] = row
+        smear_1d = np.sinc(ksmear * fnAlt)  # valor 1 en fnAlt==0
+        Hsmear = np.transpose(np.tile(smear_1d, (ncolumns, 1)))
         return Hsmear
 
     def mtfMotion(self, fn2D, kmotion):
@@ -201,7 +205,7 @@ class mtf:
         :param kmotion: Amplitude of high-frequency component for the motion smear MTF in ALT and ACT
         :return: detector MTF
         """
-        Hmotion = np.sin(fn2D*kmotion*np.pi)/(fn2D*kmotion*np.pi + 1e-12)
+        Hmotion = np.sinc(kmotion * fn2D)           # 1 en el origen
         return Hmotion
 
     #def plotMtf(self,Hdiff, Hdefoc, Hwfe, Hdet, Hsmear, Hmotion, Hsys, nlines, ncolumns, fnAct, fnAlt, directory, band):

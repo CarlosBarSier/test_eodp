@@ -1,0 +1,2 @@
+def readToa():
+    return None
