@@ -1,121 +1,154 @@
-import os
+import os, sys, glob
 import numpy as np
-import matplotlib.pyplot as plt
-from scipy.io import loadmat, savemat
 
-# --- IMPORTA TUS CLASES EXISTENTES ---
-from ism.src.detectionPhase import detectionPhase
-from ism.src.videoChainPhase import videoChainPhase
-
-# raíz = carpeta test_eodp (sube desde tests/)
+# --- Añadimos la raíz del proyecto al path (sube desde tests/)
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
-# SALIDAS del Test 2 (puedes dejarlas aquí, o donde quieras)
-OUTDIR = os.path.join(ROOT, "myoutput")
-os.makedirs(OUTDIR, exist_ok=True)
+# Import correctos con tu estructura
+from common.io.writeToa import readToa
+from config.globalConfig import globalConfig
 
-# **ENTRADA**: salida de la ÓPTICA del Test 1
-OPT_OUTDIR = r"C:\Users\Kolarov\Desktop\EarthObservation\Codes\S3\EODP-TS-ISM\myoutput"
-BAND = "VNIR-0"
-IRRAD_FILE = os.path.join(OUTDIR, "ism_toa_optical_" + BAND + ".mat")
-d = loadmat(IRRAD_FILE)['toa']
 
-os.makedirs(OUTDIR, exist_ok=True)
+# ====== RUTAS CORRECTAS, DERIVADAS DEL PROYECTO ======
+# --- Rutas absolutas correctas (usa slashes) ---
+OUT_DIR = "C:/Users/Kolarov/Desktop/EarthObservation/Codes/S3/EODP-TS-ISM/myoutput"
+REFERENCE_DIR = "C:/Users/Kolarov/Desktop/EarthObservation/Codes/S3/EODP-TS-ISM/output"
 
-# --------- LOADER GENÉRICO SIN readToa ---------
-def load_toa_irradiance(fname):
+
+# Permite sobreescribir con variables de entorno si quieres
+OUT_DIR = os.environ.get("ISM_OUT_DIR", OUT_DIR)
+REFERENCE_DIR = os.environ.get("ISM_REF_DIR", REFERENCE_DIR)
+
+# Normaliza a forward slashes (Windows friendly)
+
+print("=== ISM-0002 · Detection & Video Conversion ===")
+print(f"REF: {REFERENCE_DIR}")
+print(f"OUT: {OUT_DIR}")
+print("------------------------------------------------")
+
+# ==============================================================
+# Parámetros del test (spec ISM-0002)
+# ==============================================================
+cfg = globalConfig()
+bands = cfg.bands                     # p.ej. ["VNIR-0","VNIR-1","VNIR-2","VNIR-3"]
+
+tol_abs = 1.0e-4                      # 0.01% típico del dataset (en unidades del fichero)
+three_sigma_frac = 1 - 0.997          # 3σ ~ 99.7% -> umbral puntos fuera
+
+def check_pair(outdir, refdir, filename, tol):
     """
-    Carga la matriz de irradiancia post-óptica.
-    Admite:
-      - .mat: busca una variable 2D ('toa' si existe; si no, la primera 2D)
-      - .npy/.npz: carga array 2D (o primera 2D si .npz)
-    Devuelve ndarray 2D en mW/m^2 (tal y como suele guardarse tras óptica).
+    Lee OUT y REF, devuelve (#puntos fuera, total, boolean OK).
     """
-    if fname.lower().endswith(".mat"):
-        d = loadmat(fname)
-        # intenta 'toa' primero
-        cand = None
-        if "toa" in d and isinstance(d["toa"], np.ndarray) and d["toa"].ndim == 2:
-            cand = d["toa"]
-        else:
-            # coge la primera 2D "real"
-            for k, v in d.items():
-                if k.startswith("__"):
-                    continue
-                if isinstance(v, np.ndarray) and v.ndim == 2 and np.isrealobj(v):
-                    cand = v
-                    break
-        if cand is None:
-            raise ValueError(f"No encontré matriz 2D válida en {fname}")
-        return np.array(cand, dtype=np.float64)
+    # Comprobar existencia
+    f_out = os.path.join(outdir, filename)
+    f_ref = os.path.join(refdir, filename)
+    if not os.path.isfile(f_out):
+        raise FileNotFoundError(f"No existe salida: {f_out}")
+    if not os.path.isfile(f_ref):
+        raise FileNotFoundError(f"No existe referencia: {f_ref}")
 
-    if fname.lower().endswith(".npy"):
-        arr = np.load(fname)
-        if arr.ndim != 2:
-            raise ValueError("El .npy no contiene un array 2D")
-        return arr.astype(np.float64)
+    a = readToa(outdir, filename)          # numpy 2D
+    b = readToa(refdir, filename)          # numpy 2D
 
-    if fname.lower().endswith(".npz"):
-        npz = np.load(fname)
-        for k in npz.files:
-            v = npz[k]
-            if isinstance(v, np.ndarray) and v.ndim == 2:
-                return v.astype(np.float64)
-        raise ValueError("El .npz no tiene ninguna matriz 2D")
+    # Diferencias absolutas
+    diff = np.abs(a - b)
+    n_out = int(np.sum(diff > tol))
+    total = int(diff.size)
+    ok = (n_out < total * three_sigma_frac)
+    return n_out, total, ok
 
-    raise ValueError(f"Extensión no soportada: {fname}")
+def pretty(filename, ok, n_out, total):
+    status = "OK" if ok else "NOK"
+    pct = 100.0 * n_out / max(1, total)
+    return f"{filename}: {status}  |  fuera tol: {n_out}/{total} ({pct:.3f}%)"
 
-# --------- PLOTS RÁPIDOS (si no tienes utilidades) ---------
-def save_img(mat, title, xlabel, ylabel, outdir, basename):
-    plt.figure(figsize=(7,5))
-    im = plt.imshow(mat, origin="upper")
-    plt.title(title)
-    plt.xlabel(xlabel); plt.ylabel(ylabel)
-    plt.colorbar(im, fraction=0.046, pad=0.04)
-    plt.tight_layout()
-    plt.savefig(os.path.join(outdir, basename + ".png"), dpi=150)
-    plt.close()
+def main():
+    print("=== ISM-0002 · Detection & Video Conversion ===")
+    print(f"REF: {REFERENCE_DIR}")
+    print(f"OUT: {OUT_DIR}")
+    print("------------------------------------------------")
 
-def save_cut_alt(mat, title, outdir, basename):
-    ialt = mat.shape[0] // 2
-    plt.figure(figsize=(7,4))
-    plt.plot(mat[ialt, :])
-    plt.title(f"{title} (ALT cut @ row {ialt})")
-    plt.xlabel("act_columns")
-    plt.ylabel("value")
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(os.path.join(outdir, basename + f"_alt{ialt}.png"), dpi=150)
-    plt.close()
-    return ialt
+    # —— Ficheros de DETECCIÓN (según tu pipeline):
+    #     - ism_toa_e_<BAND>.nc           (electrones tras PRNU/DS/bad/dead)
+    #     - ism_toa_detection_<BAND>.nc   (solo conversión + efectos agregados)
+    #     - ism_toa_ds_<BAND>.nc          (dark signal)
+    #     - ism_toa_prnu_<BAND>.nc        (prnu)
+    det_lists = {
+        "ism_toa_e":         [f"ism_toa_e_{b}.nc" for b in bands],
+        "ism_toa_detection": [f"ism_toa_detection_{b}.nc" for b in bands],
+        "ism_toa_ds":        [f"ism_toa_ds_{b}.nc" for b in bands],
+        "ism_toa_prnu":      [f"ism_toa_prnu_{b}.nc" for b in bands],
+    }
 
-# ================== TEST 2: DETECTION + VCU ==================
-# 1) Carga irradiancia post-óptica (normalmente guardada en mW/m^2)
-toa_irrad_mWm2 = load_toa_irradiance(IRRAD_FILE)
+    print("— Detection stage")
+    for label, namelist in det_lists.items():
+        for fname in namelist:
+            try:
+                n_out, total, ok = check_pair(OUT_DIR, REFERENCE_DIR, fname, tol_abs)
+                print(pretty(fname, ok, n_out, total))
+            except FileNotFoundError as e:
+                print(f"{fname}: SKIP ({e})")
+        print("------------------------------------------------")
 
-# 2) Detection
-det = detectionPhase(AUXDIR, INDIR, OUTDIR)
-# OJO: tu detectionPhase debe convertir internamente mW/m^2 -> W/m^2 (*1e-3)
-toa_e = det.compute(toa_irrad_mWm2, BAND)   # devuelve e- tras PRNU/DS/bad-dead
+    # —— Fichero final de VCU (DN):
+    #     tu cadena guarda el producto final con el prefijo global "ism_toa_"
+    #     (escrito en ism.processModule -> writeToa(globalConfig.ism_toa + band, ...))
+    print("— Video Chain (VCU) – producto final en DN")
+    for b in bands:
+        fname = f"ism_toa_{b}.nc"   # salida final (DN)
+        try:
+            n_out, total, ok = check_pair(OUT_DIR, REFERENCE_DIR, fname, tol_abs)
+            print(pretty(fname, ok, n_out, total))
+        except FileNotFoundError as e:
+            print(f"{fname}: SKIP ({e})")
+    print("------------------------------------------------")
 
-# Plots y guardado (electrones)
-save_img(toa_e, "TOA after detection [e-]", "act_columns", "alt_lines", OUTDIR, f"ism2_toa_e_{BAND}")
-ialt = save_cut_alt(toa_e, "TOA after detection [e-]", OUTDIR, f"ism2_toa_e_{BAND}")
-savemat(os.path.join(OUTDIR, f"ism2_toa_e_{BAND}.mat"), {"Ne": toa_e})
+    # —— Métrica adicional pedida por la spec: % saturados por banda (en DN)
+    print("— Saturación (DN)")
+    levels = (2**12) - 1  # si quieres, lee bit depth de tu config de ismConfig
+    for b in bands:
+        fname = f"ism_toa_{b}.nc"
+        try:
+            dn = readToa(OUT_DIR, fname)
+            sat_pct = float(np.mean(dn >= levels) * 100.0)
+            print(f"{fname}: pixels saturados = {sat_pct:.3f}% (levels_max={levels})")
+        except FileNotFoundError as e:
+            print(f"{fname}: SKIP ({e})")
 
-# 3) Video Chain
-vcu = videoChainPhase(AUXDIR, INDIR, OUTDIR)
-toa_dn = vcu.compute(toa_e, BAND)           # devuelve DN (uint)
+if __name__ == "__main__":
+    main()
 
-# Plots y guardado (DN)
-save_img(toa_dn, "TOA after VCU [DN]", "act_columns", "alt_lines", OUTDIR, f"ism2_toa_dn_{BAND}")
-save_cut_alt(toa_dn, "TOA after VCU [DN]", OUTDIR, f"ism2_toa_dn_{BAND}")
-savemat(os.path.join(OUTDIR, f"ism2_toa_dn_{BAND}.mat"), {"DN": toa_dn})
+# === RESUMEN SIMPLE EN TERMINAL ===
+print("\n" + "="*60)
+print("=== RESUMEN TEST ISM-0002 ===")
+ok = nok = skip = 0
 
-# 4) % saturados (para el informe del test)
-bit_depth = det.ismConfig.bit_depth if hasattr(det, "ismConfig") else 12
-levels = (2**bit_depth) - 1
-sat_pct = float(np.mean(toa_dn >= levels) * 100.0)
-print(f"[ISM-0002] {BAND}  Saturated pixels = {sat_pct:.3f}%")
-savemat(os.path.join(OUTDIR, f"ism2_metrics_{BAND}.mat"),
-        {"sat_pct": np.array([[sat_pct]], dtype=np.float64)})
+# recorrer todos los archivos procesados y contar OK/NOK/SKIP
+for b in bands:
+    for prefix in ["ism_toa_e", "ism_toa_detection", "ism_toa_ds", "ism_toa_prnu", "ism_toa"]:
+        fname = f"{prefix}_{b}.nc"
+        fpath = os.path.join(OUT_DIR, fname)
+        if not os.path.isfile(fpath):
+            print(f"{b:<8} {prefix:<20} -> SKIP (no encontrado)")
+            skip += 1
+            continue
+        try:
+            out_arr = readToa(OUT_DIR, fname)
+            ref_arr = readToa(REFERENCE_DIR, fname)
+            diff = np.abs(out_arr - ref_arr)
+            n_out = int(np.sum(diff > tol_abs))
+            total = diff.size
+            status = "OK" if n_out < total * three_sigma_frac else "NOK"
+            pct = 100 * n_out / total
+            print(f"{b:<8} {prefix:<20} -> {status:>3s} | fuera tol: {n_out}/{total} ({pct:.3f}%)")
+            if status == "OK": ok += 1
+            else: nok += 1
+        except Exception as e:
+            print(f"{b:<8} {prefix:<20} -> ERROR ({e})")
+            skip += 1
+
+print("-"*60)
+print(f"Totales → OK: {ok} | NOK: {nok} | SKIP/ERROR: {skip}")
+print("="*60)
