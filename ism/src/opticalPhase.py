@@ -1,8 +1,7 @@
-
 from ism.src.initIsm import initIsm
 from math import pi
 from ism.src.mtf import mtf
-from numpy.fft import fftshift, ifft2, fft2
+from numpy.fft import fftshift, ifftshift, ifft2, fft2
 import numpy as np
 from common.io.writeToa import writeToa
 from common.io.readIsrf import readIsrf
@@ -81,6 +80,15 @@ class opticalPhase(initIsm):
             saveas_str = saveas_str + '_alt' + str(idalt)
             plotF([], toa[idalt,:], title_str, xlabel_str, ylabel_str, self.outdir, saveas_str)
 
+            # --- DEBUG OPTICAL STAGE ---
+            print("\n[DEBUG OpticalStage]")
+            print("TOA shape:", toa.shape)
+            print("TOA mean/std antes del MTF (estimado):", np.mean(sgm_toa), np.std(sgm_toa))
+            print("TOA después del MTF:", np.mean(toa), np.std(toa))
+            print("Hsys min/max:", np.min(Hsys), np.max(Hsys))
+            print("Ruta de salida:", self.outdir)
+            print("----------------------------\n")
+
         return toa
 
     def rad2Irrad(self, toa, D, f, Tr):
@@ -93,7 +101,7 @@ class opticalPhase(initIsm):
         :return: TOA image in irradiances [mW/m2]
         """
 
-        toa = Tr*toa*np.pi/4*(D/f)**2
+        toa = Tr*toa*(np.pi/4)*(D/f)**2
         return toa
 
 
@@ -104,10 +112,17 @@ class opticalPhase(initIsm):
         :param Hsys: System MTF
         :return: TOA image in irradiances [mW/m2]
         """
+        """
+        Apply the system MTF to the TOA image (same dimensions).
+        The MTF provided by mtf.system_mtf() is already centred.
+        """
+        i0, j0 = toa.shape[0] // 2, toa.shape[1] // 2
+        dc = Hsys[i0, j0]
+        if dc != 0:
+            Hsys = Hsys / dc
+        # Aplica SIN shifts (Hsys ya está centrado como lo generas)
         GE = fft2(toa)
-        toa_1 = GE*fftshift(Hsys)
-        toa_ft = ifft2(toa_1)
-        toa_ft = np.real(toa_ft)
+        toa_ft = np.real(ifft2(GE * Hsys))
         return toa_ft
 
     def spectralIntegration(self, sgm_toa, sgm_wv, band):
@@ -119,20 +134,22 @@ class opticalPhase(initIsm):
         :return: TOA image 2D in radiances [mW/m2]
         """
         # wv in [um]
-        isrf, wv_isrf = readIsrf(self.auxdir + self.ismConfig.isrffile, band)
-        wv_isrf = wv_isrf * 1000
-        isrf_normalised = isrf/np.sum(isrf)
+        isrf, wv_isrf_um = readIsrf(self.auxdir + self.ismConfig.isrffile, band)
+        wv_isrf_nm = wv_isrf_um * 1000.0
 
-        # Init toa
+        # Normaliza el ISRF por su INTEGRAL (no por la suma)
+        # -> área = 1 en el eje de wv de trabajo (nm aquí)
+        area = np.trapz(isrf, wv_isrf_nm)
+        isrf_n = isrf / area if area != 0 else isrf
+
         toa = np.zeros((sgm_toa.shape[0], sgm_toa.shape[1]))
-
-        # Apply the filter --> Get rid of the spectral dimensions
         for ialt in range(sgm_toa.shape[0]):
             for iact in range(sgm_toa.shape[1]):
-                cs = interp1d(sgm_wv, sgm_toa[ialt, iact, :], fill_value=(0, 0), bounds_error=False)
-                toa_i = cs(wv_isrf)
-                toa[ialt, iact] = np.sum(np.dot(toa_i, isrf_normalised))
+                # interpola la columna espectral del SGM a la rejilla del ISRF
+                cs = interp1d(sgm_wv, sgm_toa[ialt, iact, :],
+                              fill_value=(0.0, 0.0), bounds_error=False)
+                toa_i = cs(wv_isrf_nm)  # TOA(λ) en la rejilla del ISRF
+                # integra TOA(λ)*ISRF_n(λ) dλ
+                toa[ialt, iact] = np.trapz(toa_i * isrf_n, wv_isrf_nm)
 
         return toa
-
-

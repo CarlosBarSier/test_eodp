@@ -11,3 +11,4 @@ outdir = r"C:\\Users\Kolarov\Desktop\EarthObservation\Codes\S3\EODP-TS-ISM\myout
 # Initialise the ISM
 myIsm = ism(auxdir, indir, outdir)
 myIsm.processModule()
+
