@@ -62,7 +62,33 @@ class l1c(initL1c):
         :param band: band
         :return: L1C radiances, L1C latitude and longitude in degrees
         '''
-        #TODO
+        tck = bisplrep(lat, lon, toa)
+
+        m = mgrs.MGRS()
+        mgrs_cells = set()
+        variable = True  # usar precisión variable según config!!!!
+        prec = self.l1cConfig.mgrs_tile_precision
+
+        n_alt, n_act = lat.shape
+        for i in range(n_alt):
+            for j in range(n_act):
+                code = m.toMGRS(lat[i, j], lon[i, j], variable, prec)
+                # toMGRS devuelve bytes en algunas versiones → asegurar str!!!!
+                if not isinstance(code, str):
+                    code = code.decode("utf-8")
+                mgrs_cells.add(code)
+
+        mgrs_cells = list(mgrs_cells)
+
+        lat_l1c = np.zeros(len(mgrs_cells), dtype=float)
+        lon_l1c = np.zeros(len(mgrs_cells), dtype=float)
+        toa_l1c = np.zeros(len(mgrs_cells), dtype=float)
+
+        for k, code in enumerate(mgrs_cells):
+            lat_k, lon_k = m.toLatLon(code, True)
+            lat_l1c[k] = lat_k
+            lon_l1c[k] = lon_k
+            toa_l1c[k] = bisplev(lat_k, lon_k, tck)
         return lat_l1c, lon_l1c, toa_l1c
 
     def checkSize(self, lat,toa):
@@ -73,4 +99,7 @@ class l1c(initL1c):
         :param toa: Radiance 2D matrix
         :return: NA
         '''
-        #TODO
+        if lat.shape != toa.shape:
+            raise ValueError(
+                f"Shape mismatch: geodetic {lat.shape} vs TOA {toa.shape}"
+            )
