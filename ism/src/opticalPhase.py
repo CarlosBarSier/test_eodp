@@ -132,9 +132,9 @@ class opticalPhase(initIsm):
         isrf, wv_isrf_um = readIsrf(self.auxdir + self.ismConfig.isrffile, band)
         wv_isrf_nm = wv_isrf_um * 1000.0
 
-        # Normaliza el ISRF por su INTEGRAL (no por la suma)
+        # NOTA PERSONAL: NO VOLVER A HACER CON TRAPEZOID AUNQUE PAREZCA MÁS EXACTO
         # -> área = 1 en el eje de wv de trabajo (nm aquí)
-        area = np.trapz(isrf, wv_isrf_nm)
+        area = np.sum(isrf)
         isrf_n = isrf / area if area != 0 else isrf
 
         toa = np.zeros((sgm_toa.shape[0], sgm_toa.shape[1]))
@@ -145,6 +145,6 @@ class opticalPhase(initIsm):
                               fill_value=(0.0, 0.0), bounds_error=False)
                 toa_i = cs(wv_isrf_nm)  # TOA(λ) en la rejilla del ISRF
                 # integra TOA(λ)*ISRF_n(λ) dλ
-                toa[ialt, iact] = np.trapz(toa_i * isrf_n, wv_isrf_nm)
+                toa[ialt, iact] = np.sum(toa_i * isrf_n)
 
         return toa
