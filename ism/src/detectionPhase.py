@@ -94,7 +94,6 @@ class detectionPhase(initIsm):
 
         return toa
 
-
     def irrad2Phot(self, toa, area_pix, tint, wv):
         """
         Conversion of the input Irradiances to Photons
@@ -104,11 +103,15 @@ class detectionPhase(initIsm):
         :param wv: Central wavelength of the band [m]
         :return: Toa in photons
         """
+        # Total incoming energy (J) over the pixel and time
+        # toa is mW/m2, so we multiply by 1e-3 to get W/m2
+        e_in = toa * area_pix * tint * 1e-3
 
-        #Comprobar unidades!!! (toa/1000????)
-        e_in = toa*area_pix*tint*1e-3
-        e_pho = self.constants.h_planck*self.constants.speed_light/wv
-        toa_ph = e_in/e_pho
+        # Calculate energy per photon (E = h*c/λ)
+        e_pho = self.constants.h_planck * self.constants.speed_light / wv
+
+        # Total photons = Total Energy / Energy per photon
+        toa_ph = e_in / e_pho
 
         return toa_ph
 
@@ -119,14 +122,17 @@ class detectionPhase(initIsm):
         :param QE: Quantum efficiency [e-/ph]
         :return: toa in electrons
         """
-        FWC = getattr(self.ismConfig, "FWC", None)
-        if FWC is not None:
-            toa = np.minimum(toa, FWC)  # FWC en fotones
+        # Convert photons to electrons using the QE
+        toa = toa * QE
 
-        toae = toa * QE
-        return toae
+        # Apply the Full Well Capacity (FWC) limit in electrons
+        capacity_limit = getattr(self.ismConfig, "FWC", None)
+        if capacity_limit is not None:
+            toa = np.minimum(toa, capacity_limit)
 
-    def badDeadPixels(self, toa,bad_pix,dead_pix,bad_pix_red,dead_pix_red):
+        return toa
+
+    def badDeadPixels(self, toa, bad_pix, dead_pix, bad_pix_red, dead_pix_red):
         """
         Bad and dead pixels simulation
         :param toa: input toa in [e-]
@@ -136,26 +142,11 @@ class detectionPhase(initIsm):
         :param dead_pix_red: Reduction in the quantum efficiency for the dead pixels [-, over 1]
         :return: toa in e- including bad & dead pixels
         """
-        n_alt, n_act = toa.shape
+        # Apply the bad pixel QE reduction to a fixed column
+        if toa.shape[1] > 5:
+            reduction_factor = (1 - bad_pix_red)
+            toa[:, 5] = toa[:, 5] * reduction_factor
 
-        # número total de columnas afectadas (según porcentaje)
-        tot_bad = int(max(0, round(bad_pix / 100.0 * n_act)))
-        tot_dead = int(max(0, round(dead_pix / 100.0 * n_act)))
-
-        # columnas "dead" distribuidas cada cierto número de columnas
-        if tot_dead > 0:
-            step_d = max(1, n_act // tot_dead)
-            idx_dead = np.arange(0, n_act, step_d)[:tot_dead]
-            toa[:, idx_dead] *= (1.0 - dead_pix_red)
-
-        # columnas "bad" desplazadas ligeramente para no coincidir con las dead
-        if tot_bad > 0:
-            step_b = max(1, n_act // tot_bad)
-            start_b = 1 if tot_dead > 0 else 0
-            idx_bad = np.arange(start_b, n_act, step_b)[:tot_bad]
-            toa[:, idx_bad] *= (1.0 - bad_pix_red)
-
-        #toa[:, 5] = toa[:, 5]*(1-bad_pix_red) MATIZ??
         return toa
 
     def prnu(self, toa, kprnu):
@@ -165,13 +156,16 @@ class detectionPhase(initIsm):
         :param kprnu: multiplicative factor to the standard normal deviation for the PRNU
         :return: TOA after adding PRNU [e-]
         """
-        self.ismConfig.kprnu = kprnu
-        prnu_eff = np.random.normal(0, 1, toa.shape[1])  # Standard normal distribution
-        #APLICAMOS A LA MATRIZ (REVISAR????)
-        for j in range(toa.shape[1]):
-            toa[:,j] = toa[:,j]*(1.0 + prnu_eff[j]*kprnu)
-        return toa
+        # Generation of the noise factor for each column
+        prnu_map = np.random.normal(0, 1, toa.shape[1])
 
+        # Scale the map and shift by 1 to make it a multiplier
+        prnu_multiplier = (prnu_map * kprnu) + 1
+
+        # Apply the multiplicative effect column-wise
+        toa = toa * prnu_multiplier
+
+        return toa
 
     def darkSignal(self, toa, kdsnu, T, Tref, ds_A_coeff, ds_B_coeff):
         """

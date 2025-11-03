@@ -48,14 +48,14 @@ class videoChainPhase(initIsm):
     def electr2Volt(self, toa, OCF, gain_adc):
         """
         Electron to Volts conversion.
-        Simulates the read-out and the amplification
-        (multiplication times the gain).
+        Simulates the read-out and amplification (multiplication times the gain).
         :param toa: input toa in [e-]
         :param OCF: Output Conversion factor [V/e-]
         :param gain_adc: Gain of the Analog-to-digital conversion [-]
         :return: output toa in [V]
         """
-        toa = toa*OCF*gain_adc
+        # Calculate the total conversion factor and apply
+        toa = toa * OCF * gain_adc
         return toa
 
     def digitisation(self, toa, bit_depth, min_voltage, max_voltage):
@@ -67,9 +67,20 @@ class videoChainPhase(initIsm):
         :param max_voltage: maximum voltage
         :return: toa in digital counts
         """
-        levels = (2**bit_depth) - 1
-        span = max_voltage - min_voltage
-        toa_dn = np.round((toa - min_voltage)/span*levels)
-        toa_dn = np.clip(toa_dn, 0, levels).astype(np.float64)
+        # Maximum digital number for given bit depth
+        max_dn = (2 ** bit_depth) - 1
+
+        # Scale V input to DN range
+        scaled_result = (toa - min_voltage) / (max_voltage - min_voltage) * max_dn
+
+        # Round to the nearest integer DN
+        toa_dn = np.round(scaled_result)
+
+        # Clip values to [0, max_dn]
+        toa_dn = np.clip(toa_dn, 0, max_dn).astype(np.float64)
+
         return toa_dn
+
+
+
 
