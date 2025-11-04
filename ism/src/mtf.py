@@ -322,3 +322,34 @@ class mtf:
             plt.tight_layout()
             plt.savefig(os.path.join(directory, f"ism_mtf_cut_alt_{band}.png"), dpi=150)
             plt.close()
+
+            # --- Guardar valores MTF en Nyquist ---
+            try:
+                # Cálculo de Nyquist (frecuencia normalizada 0.5)
+                target_fn = 0.5
+
+                # Buscar el índice de Nyquist más cercano en los ejes ACT y ALT
+                idx_act_ny = int(np.argmin(np.abs(fnAct - target_fn)))
+                idx_alt_ny = int(np.argmin(np.abs(fnAlt - target_fn)))
+
+                # Valores correspondientes
+                mtf_act_val = float(Hsys[ialt_c, idx_act_ny])  # dirección ACT
+                mtf_alt_val = float(Hsys[idx_alt_ny, iact_c])  # dirección ALT
+
+                # Archivo de salida
+                output_path = self.outdir + '/mtf_nyquist.txt'
+
+                # Escribir encabezado solo una vez
+                if band == 'VNIR-0':
+                    with open(output_path, 'w') as file:
+                        file.write('=== MTF at Nyquist (f·w = 0.5) ===\n\n')
+
+                # Añadir línea con los valores de esta banda
+                with open(output_path, 'a') as file:
+                    file.write(f'{band}\n')
+                    file.write(f'Act_MTF = {mtf_act_val:.6f}\n')
+                    file.write(f'Alt_MTF = {mtf_alt_val:.6f}\n\n')
+
+            except Exception as e:
+                self.logger.warning(f'No se pudo escribir mtf_nyquist.txt: {e}')
+

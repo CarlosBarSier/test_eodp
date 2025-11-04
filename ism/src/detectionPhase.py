@@ -22,14 +22,14 @@ class detectionPhase(initIsm):
         # -------------------------------------------------------------------------------
         self.logger.info("EODP-ALG-ISM-2010: Irradiances to Photons")
         area_pix = self.ismConfig.pix_size * self.ismConfig.pix_size # [m2]
-        toa = self.irrad2Phot(toa, area_pix, self.ismConfig.t_int, self.ismConfig.wv[int(band[-1])])
+        toa = self.irrad2Phot(toa, area_pix, self.ismConfig.t_int, self.ismConfig.wv[int(band[-1])], band)
 
         self.logger.debug("TOA [0,0] " +str(toa[0,0]) + " [ph]")
 
         # Photon to electrons conversion
         # -------------------------------------------------------------------------------
         self.logger.info("EODP-ALG-ISM-2030: Photons to Electrons")
-        toa = self.phot2Electr(toa, self.ismConfig.QE)
+        toa = self.phot2Electr(toa, self.ismConfig.QE, self.ismConfig.FWC, band)
 
         self.logger.debug("TOA [0,0] " +str(toa[0,0]) + " [e-]")
 
@@ -94,7 +94,7 @@ class detectionPhase(initIsm):
 
         return toa
 
-    def irrad2Phot(self, toa, area_pix, tint, wv):
+    def irrad2Phot(self, toa, area_pix, tint, wv, band):
         """
         Conversion of the input Irradiances to Photons
         :param toa: input TOA in irradiances [mW/m2]
@@ -113,9 +113,20 @@ class detectionPhase(initIsm):
         # Total photons = Total Energy / Energy per photon
         toa_ph = e_in / e_pho
 
+        # --- Guardar factor Irrad2Phot en archivo ---
+        factor = (area_pix * tint * 1e-3) / (self.constants.h_planck * self.constants.speed_light / wv)
+        output_path = self.outdir + '/detection_factors.txt'
+
+        if band == 'VNIR-0':
+            with open(output_path, 'w') as f:
+                f.write('=== Detection Factors ===\n\n')
+
+        with open(output_path, 'a') as f:
+            f.write(f'{band}\n')
+            f.write(f'Irrad2Phot factor = {factor:.6e}\n\n')
         return toa_ph
 
-    def phot2Electr(self, toa, QE):
+    def phot2Electr(self, toa, QE, FWC, band):
         """
         Conversion of photons to electrons
         :param toa: input TOA in photons [ph]
@@ -123,14 +134,28 @@ class detectionPhase(initIsm):
         :return: toa in electrons
         """
         # Convert photons to electrons using the QE
-        toa = toa * QE
+        toae = toa * QE
 
-        # Apply the Full Well Capacity (FWC) limit in electrons
-        capacity_limit = getattr(self.ismConfig, "FWC", None)
-        if capacity_limit is not None:
-            toa = np.minimum(toa, capacity_limit)
+        if FWC is not None:
+            n_tot = toae.size
+            n_sat = int((toae > FWC).sum())
+            perc_sat = (n_sat / n_tot) * 100.0
 
-        return toa
+            # Recorte a FWC
+            toae = np.minimum(toae, FWC)
+
+            # Escribir en el mismo fichero de factores
+            output_path = self.outdir + '/detection_factors.txt'
+            with open(output_path, 'a') as f:
+                f.write(f'Phot2Electr factor = {QE:.6e}\n')
+                f.write(f'Percentage of saturated pixels = {perc_sat:.6f}%\n\n')
+        else:
+            # Sin FWC, solo registramos el factor
+            output_path = self.outdir + '/detection_factors.txt'
+            with open(output_path, 'a') as f:
+                f.write(f'Phot2Electr factor = {QE:.6e}\n\n')
+
+        return toae
 
     def badDeadPixels(self, toa, bad_pix, dead_pix, bad_pix_red, dead_pix_red):
         """

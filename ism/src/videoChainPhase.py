@@ -17,7 +17,7 @@ class videoChainPhase(initIsm):
         self.logger.info("EODP-ALG-ISM-3010: Electrons to Voltage – Read-out and Amplification")
         toa = self.electr2Volt(toa,
                          self.ismConfig.OCF,
-                         self.ismConfig.ADC_gain)
+                         self.ismConfig.ADC_gain, band)
 
         self.logger.debug("TOA [0,0] " +str(toa[0,0]) + " [V]")
 
@@ -27,7 +27,7 @@ class videoChainPhase(initIsm):
         toa = self.digitisation(toa,
                           self.ismConfig.bit_depth,
                           self.ismConfig.min_voltage,
-                          self.ismConfig.max_voltage)
+                          self.ismConfig.max_voltage, band)
 
         self.logger.debug("TOA [0,0] " +str(toa[0,0]) + " [DN]")
 
@@ -45,7 +45,7 @@ class videoChainPhase(initIsm):
 
         return toa
 
-    def electr2Volt(self, toa, OCF, gain_adc):
+    def electr2Volt(self, toa, OCF, gain_adc, band):
         """
         Electron to Volts conversion.
         Simulates the read-out and amplification (multiplication times the gain).
@@ -56,9 +56,20 @@ class videoChainPhase(initIsm):
         """
         # Calculate the total conversion factor and apply
         toa = toa * OCF * gain_adc
+
+        # --- Guardar factor Electrons to Volt conversion ---
+        output_path = self.outdir + '/videochain_factors.txt'
+        if band == 'VNIR-0':
+            with open(output_path, 'w') as f:
+                f.write('=== Video Chain Factors ===\n\n')
+
+        with open(output_path, 'a') as f:
+            f.write(f'{band}\n')
+            f.write(f'Electr2Volt factor = {(OCF * gain_adc):.6e}\n\n')
+
         return toa
 
-    def digitisation(self, toa, bit_depth, min_voltage, max_voltage):
+    def digitisation(self, toa, bit_depth, min_voltage, max_voltage, band):
         """
         Digitisation - conversion from Volts to Digital counts
         :param toa: input toa in [V]
@@ -78,6 +89,11 @@ class videoChainPhase(initIsm):
 
         # Clip values to [0, max_dn]
         toa_dn = np.clip(toa_dn, 0, max_dn).astype(np.float64)
+
+        # --- Guardar factor de Digitalización (V→DN) ---
+        output_path = self.outdir + '/videochain_factors.txt'
+        with open(output_path, 'a') as f:
+            f.write(f'Digitisation factor = {((2 ** bit_depth - 1) / (max_voltage - min_voltage)):.6e}\n\n')
 
         return toa_dn
 

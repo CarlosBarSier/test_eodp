@@ -40,10 +40,7 @@ class opticalPhase(initIsm):
         # Radiance to Irradiance conversion
         # -------------------------------------------------------------------------------
         self.logger.info("EODP-ALG-ISM-1020: Radiances to Irradiances")
-        toa = self.rad2Irrad(toa,
-                             self.ismConfig.D,
-                             self.ismConfig.f,
-                             self.ismConfig.Tr)
+        toa = self.rad2Irrad(toa, self.ismConfig.D, self.ismConfig.f, self.ismConfig.Tr, band)
 
         self.logger.debug("TOA [0,0] " +str(toa[0,0]) + " [e-]")
 
@@ -89,21 +86,39 @@ class opticalPhase(initIsm):
             print("Ruta de salida:", self.outdir)
             print("----------------------------\n")
 
+        if hasattr(self, "rad2irrad_factors"):
+            print("\n=== Radiance → Irradiance Factors ===")
+            print("{:<10} | {:>15}".format("Band", "Factor"))
+            print("-" * 30)
+            for b, fval in self.rad2irrad_factors:
+                print("{:<10} | {:>15.6e}".format(b, fval))
+            print("-" * 30)
+
         return toa
 
-    def rad2Irrad(self, toa, D, f, Tr):
+    def rad2Irrad(self, toa, D, f, Tr, band=None):
         """
-        Radiance to Irradiance conversion
-        :param toa: Input TOA image in radiances [mW/sr/m2]
-        :param D: Pupil diameter [m]
-        :param f: Focal length [m]
-        :param Tr: Optical transmittance [-]
-        :return: TOA image in irradiances [mW/m2]
+        Radiance to Irradiance conversion.
+        Guarda el factor de conversión de cada banda y muestra la tabla al final.
         """
+        factor = Tr * (np.pi / 4.0) * (D / f) ** 2
+        toa = factor * toa
 
-        toa = Tr*toa*(np.pi/4)*(D/f)**2
+        # Ruta del archivo donde se guardarán todos los factores
+        output_path = self.outdir + '/rad2irrad.txt'
+
+        # Si es la primera banda, vaciar el archivo
+        if band == 'VNIR-0':
+            with open(output_path, 'w') as file:
+                file.write('=== Radiance to Irradiance factors ===\n\n')
+
+
+        # Añadir el factor de la banda actual
+        with open(output_path, 'a') as file:
+            file.write(f'{band}\n')
+            file.write(f'Rad2Irra factor = {factor:.6e}\n\n')
+
         return toa
-
 
     def applySysMtf(self, toa, Hsys):
         """
